@@ -69,7 +69,6 @@ export default function DashboardPage() {
     const confirmDelete = confirm("¿Seguro que quieres cancelar esta reserva?");
     if (!confirmDelete) return;
 
-    // eliminación optimista
     setReservations((prev) => prev.filter((r) => r.id !== id));
 
     try {
@@ -91,7 +90,17 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-2xl mx-auto bg-white shadow-sm rounded-2xl p-6">
-        <h1 className="text-2xl font-semibold mb-2">Dashboard</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+
+          {/* 👉 CTA NUEVA RESERVA */}
+          <button
+            onClick={() => router.push("/reservations")}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+          >
+            Nueva reserva
+          </button>
+        </div>
 
         {user && (
           <p className="text-gray-500 mb-4">
