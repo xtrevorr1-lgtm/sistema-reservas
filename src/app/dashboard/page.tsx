@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { onAuthStateChanged, User } from "firebase/auth";
 import {
   collection,
   query,
   where,
-  getDocs,
+  onSnapshot,
+  deleteDoc,
+  doc,
   orderBy,
 } from "firebase/firestore";
+import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 
 interface Reservation {
@@ -22,11 +24,12 @@ export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
-
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+    let unsubscribeSnapshot: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
       if (!u) {
         router.push("/login");
         return;
@@ -37,51 +40,108 @@ export default function DashboardPage() {
       const q = query(
         collection(db, "reservations"),
         where("userId", "==", u.uid),
-        orderBy("createdAt", "desc")
+        orderBy("date"),
+        orderBy("time")
       );
 
-      const snapshot = await getDocs(q);
+      unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        const data: Reservation[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<Reservation, "id">),
+        }));
 
-      const data: Reservation[] = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<Reservation, "id">),
-      }));
-
-      setReservations(data);
-      setLoading(false);
+        setReservations(data);
+        setLoading(false);
+      });
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeSnapshot) unsubscribeSnapshot();
+    };
   }, [router]);
 
-  if (loading) return <p className="text-center mt-10">Cargando...</p>;
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
+
+  const handleDelete = async (id: string) => {
+    const confirmDelete = confirm("¿Seguro que quieres cancelar esta reserva?");
+    if (!confirmDelete) return;
+
+    setReservations((prev) => prev.filter((r) => r.id !== id));
+
+    try {
+      await deleteDoc(doc(db, "reservations", id));
+    } catch (error) {
+      console.error(error);
+      alert("Error al cancelar la reserva");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-gray-500">Cargando reservas...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-xl mx-auto mt-10 bg-white p-6 rounded-xl shadow">
-      <h1 className="text-2xl font-bold mb-4">Mis reservas</h1>
+    <main className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-2xl mx-auto bg-white shadow-sm rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
 
-      {reservations.length === 0 ? (
-        <p>No tienes reservas aún</p>
-      ) : (
-        <ul className="space-y-3">
-          {reservations.map((res) => (
-            <li
-              key={res.id}
-              className="border rounded-lg p-3 flex justify-between"
-            >
-              <span>{res.date}</span>
-              <span>{res.time}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+          {/* 👉 CTA NUEVA RESERVA */}
+          <button
+            onClick={() => router.push("/reservations")}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+          >
+            Nueva reserva
+          </button>
+        </div>
 
-      <button
-        onClick={() => router.push("/reservations")}
-        className="mt-6 bg-blue-600 text-white px-4 py-2 rounded w-full hover:bg-blue-700"
-      >
-        Nueva reserva
-      </button>
-    </div>
+        {user && (
+          <p className="text-gray-500 mb-4">
+            Bienvenido, <span className="font-medium">{user.email}</span>
+          </p>
+        )}
+
+        <button
+          onClick={handleLogout}
+          className="mb-6 px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
+        >
+          Cerrar sesión
+        </button>
+
+        <h2 className="text-lg font-semibold mb-4">Tus reservas</h2>
+
+        {reservations.length === 0 ? (
+          <p className="text-gray-500">No tienes reservas aún</p>
+        ) : (
+          <ul className="space-y-3">
+            {reservations.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-center justify-between border rounded-xl p-4"
+              >
+                <div>
+                  <p className="font-medium">{r.date}</p>
+                  <p className="text-sm text-gray-500">{r.time}</p>
+                </div>
+
+                <button
+                  onClick={() => handleDelete(r.id)}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition"
+                >
+                  Cancelar
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </main>
   );
 }
